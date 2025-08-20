@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Guess the Temperature</title>
+</head>
+<body>
+  <h2>Guess the Temperature in {{ city }}</h2>
+  <p><strong>Local Time:</strong> {{ localtime }}</p>
+  <p><strong>Score:</strong> {{ score }}</p>
+  <form method="post">
+    <input type="number" name="guess" step="0.1" required placeholder="Your guess in °F">
+    <button type="submit">Submit Guess</button>
+  </form>
+</body>
+</html>

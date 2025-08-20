@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Game Over</title>
+</head>
+<body>
+  <h2>Game Over!</h2>
+  <p>The temperature in {{ city }} was {{ temp }}°F, and the weather was: {{ desc }}</p>
+  <p><strong>Local Time:</strong> {{ localtime }}</p>
+  <p>Your final score: {{ score }}</p>
+
+  <form method="post">
+    <label>Enter your name for the leaderboard:</label><br>
+    <input type="text" name="name" required>
+    <button type="submit">Submit</button>
+  </form>
+
+  <h3>Leaderboard</h3>
+  <ul>
+    {% for name, score in leaderboard %}
+      <li>{{ name }}: {{ score }}</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
