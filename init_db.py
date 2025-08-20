@@ -1,10 +1,8 @@
 import sqlite3
 
-# Connect to (or create) the database file
 conn = sqlite3.connect('leaderboard.db')
 cursor = conn.cursor()
 
-# Create a leaderboard table
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS leaderboard (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,4 +14,4 @@ CREATE TABLE IF NOT EXISTS leaderboard (
 conn.commit()
 conn.close()
 
-print("Database initialized.")
+print("Leaderboard table ready.")

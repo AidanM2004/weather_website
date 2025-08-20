@@ -1,67 +1,65 @@
-from flask import Flask, render_template, request, redirect, session, jsonify
+from flask import Flask, render_template, request, redirect, session
+from dotenv import load_dotenv
+load_dotenv()
+
 import requests
 import random
 import os
 import sqlite3
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key'  # for sessions
+app.secret_key = 'your-secret-key'  # replace with a strong secret key!
 
 API_KEY = os.getenv("WEATHER_API_KEY")
 BASE_URL = "http://api.weatherapi.com/v1/current.json?"
 
 AMERICAN_CITIES = [
-    "New York", "Los Angeles", "Chicago", "Houston", "Phoenix",
-    "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Jose",
-    "Austin", "Jacksonville", "Fort Worth", "Columbus", "Charlotte",
-    "San Francisco", "Indianapolis", "Seattle", "Denver", "Washington",
-    "Boston", "El Paso", "Detroit", "Nashville", "Portland",
-    "Memphis", "Oklahoma City", "Las Vegas", "Louisville", "Baltimore",
-    "Milwaukee", "Albuquerque", "Tucson", "Fresno", "Sacramento",
-    "Mesa", "Kansas City", "Atlanta", "Long Beach", "Colorado Springs",
-    "Raleigh", "Miami", "Virginia Beach", "Omaha", "Oakland",
-    "Minneapolis", "Tulsa", "Arlington", "Tampa", "New Orleans",
+    "New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",
+    "San Antonio", "San Diego", "Dallas", "San Jose", "Austin", "Jacksonville",
+    "Fort Worth", "Columbus", "Charlotte", "San Francisco", "Indianapolis", "Seattle",
+    "Denver", "Washington", "Boston", "El Paso", "Detroit", "Nashville", "Portland",
+    "Memphis", "Oklahoma City", "Las Vegas", "Louisville", "Baltimore", "Milwaukee",
+    "Albuquerque", "Tucson", "Fresno", "Sacramento", "Mesa", "Kansas City", "Atlanta",
+    "Long Beach", "Colorado Springs", "Raleigh", "Miami", "Virginia Beach", "Omaha",
+    "Oakland", "Minneapolis", "Tulsa", "Arlington", "Tampa", "New Orleans",
 ]
 
 WORLDWIDE_CITIES = [
-    "New York", "Los Angeles", "San Francisco", "Cincinnati", "Las Vegas", "Orlando", "Tampa",
-    "London", "Paris", "Tokyo", "Sydney", "Moscow", "Rio de Janeiro", "Cape Town",
+    "New York", "Los Angeles", "San Francisco", "Cincinnati", "Las Vegas", "Orlando",
+    "Tampa", "London", "Paris", "Tokyo", "Sydney", "Moscow", "Rio de Janeiro", "Cape Town",
     "Toronto", "Dubai", "Beijing", "Mumbai", "Mexico City", "Berlin", "Buenos Aires",
-    "Seoul", "Madrid", "Rome", "Bangkok", "Istanbul", "Singapore", "Hong Kong",
-    "Cairo", "Lagos", "Jakarta", "Melbourne", "Athens", "Vancouver", "Lisbon",
-    "Kuala Lumpur", "Stockholm", "Prague", "Helsinki", "Amsterdam", "Warsaw",
-    "Lima", "Bogota", "Santiago", "Casablanca", "Budapest", "Dublin", "Oslo",
-    "Havana", "Reykjavik", "Brussels", "Manila", "Kiev", "Tehran", "Jerusalem",
-    "Baghdad", "Karachi"
+    "Seoul", "Madrid", "Rome", "Bangkok", "Istanbul", "Singapore", "Hong Kong", "Cairo",
+    "Lagos", "Jakarta", "Melbourne", "Athens", "Vancouver", "Lisbon", "Kuala Lumpur",
+    "Stockholm", "Prague", "Helsinki", "Amsterdam", "Warsaw", "Lima", "Bogota",
+    "Santiago", "Casablanca", "Budapest", "Dublin", "Oslo", "Havana", "Reykjavik",
+    "Brussels", "Manila", "Kiev", "Tehran", "Jerusalem", "Baghdad", "Karachi"
 ]
 
 DB_FILE = 'leaderboard.db'
 
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS leaderboard (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        score INTEGER NOT NULL
-    )
-    ''')
-    conn.commit()
-    conn.close()
-
 def get_weather(city):
+    if not API_KEY:
+        print("ERROR: WEATHER_API_KEY environment variable is not set.")
+        return None, None, None, None, None
+
     url = BASE_URL + f"key={API_KEY}&q={city}&aqi=no"
-    response = requests.get(url)
-    if response.status_code == 200:
+    try:
+        response = requests.get(url, timeout=5)
         data = response.json()
+        if response.status_code != 200:
+            print(f"API error: {data}")
+            return None, None, None, None, None
+
         temp = data['current']['temp_f']
         desc = data['current']['condition']['text']
         time = data['location']['localtime']
         country = data['location']['country']
         state = data['location'].get('region', '')
         return temp, desc, time, state, country
-    return None, None, None, None, None
+
+    except Exception as e:
+        print(f"Error getting weather: {e}")
+        return None, None, None, None, None
 
 def load_leaderboard(limit=5):
     conn = sqlite3.connect(DB_FILE)
@@ -74,6 +72,8 @@ def load_leaderboard(limit=5):
 def save_leaderboard(name, score):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
+    # We do NOT update if score is lower or equal; just keep the highest score per name
     cursor.execute("SELECT score FROM leaderboard WHERE name = ?", (name,))
     row = cursor.fetchone()
 
@@ -100,8 +100,11 @@ def index():
 
 @app.route("/game", methods=["GET", "POST"])
 def game():
-    city = session.get('city')
-    score = session.get('score', 0)
+    if 'city' not in session or 'score' not in session:
+        return redirect("/")
+
+    city = session['city']
+    score = session['score']
     temp, desc, localtime, state, country = get_weather(city)
 
     if request.method == "POST":
@@ -117,6 +120,7 @@ def game():
             session['final_temp'] = temp
             session['final_desc'] = desc
             session['localtime'] = localtime
+            session['country'] = country
             return redirect("/gameover")
 
     return render_template("game.html", city=city, state=state, country=country, score=score, localtime=localtime)
@@ -129,13 +133,19 @@ def gameover():
         save_leaderboard(name, score)
         return redirect("/")
 
-    return render_template("gameover.html",
-                           city=session.get("city"),
-                           score=session.get("score"),
-                           temp=session.get("final_temp"),
-                           desc=session.get("final_desc"),
-                           localtime=session.get("localtime"),
-                           leaderboard=load_leaderboard())
+    final_data = {
+        "city": session.get("city", "Unknown City"),
+        "country": session.get("country", "Unknown Country"),
+        "score": session.get("score", 0),
+        "temp": session.get("final_temp", "N/A"),
+        "desc": session.get("final_desc", "N/A"),
+        "localtime": session.get("localtime", "N/A"),
+        "leaderboard": load_leaderboard()
+    }
+
+    session.clear()
+
+    return render_template("gameover.html", **final_data)
 
 @app.after_request
 def add_no_cache_headers(response):
@@ -145,5 +155,4 @@ def add_no_cache_headers(response):
     return response
 
 if __name__ == "__main__":
-    init_db()  # Initialize DB on startup
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=10000, debug=True)
