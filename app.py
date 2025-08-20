@@ -2,16 +2,13 @@ from flask import Flask, render_template, request, redirect, session, jsonify
 import requests
 import random
 import os
-
 import sqlite3
-
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'  # for sessions
 
 API_KEY = os.getenv("WEATHER_API_KEY")
 BASE_URL = "http://api.weatherapi.com/v1/current.json?"
-LEADERBOARD_FILE = "leaderboard.txt"
 
 AMERICAN_CITIES = [
     "New York", "Los Angeles", "Chicago", "Houston", "Phoenix",
@@ -38,6 +35,21 @@ WORLDWIDE_CITIES = [
     "Baghdad", "Karachi"
 ]
 
+DB_FILE = 'leaderboard.db'
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS leaderboard (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        score INTEGER NOT NULL
+    )
+    ''')
+    conn.commit()
+    conn.close()
+
 def get_weather(city):
     url = BASE_URL + f"key={API_KEY}&q={city}&aqi=no"
     response = requests.get(url)
@@ -51,8 +63,6 @@ def get_weather(city):
         return temp, desc, time, state, country
     return None, None, None, None, None
 
-DB_FILE = 'leaderboard.db'
-
 def load_leaderboard(limit=5):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -64,13 +74,10 @@ def load_leaderboard(limit=5):
 def save_leaderboard(name, score):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-
-    # Check if user exists
     cursor.execute("SELECT score FROM leaderboard WHERE name = ?", (name,))
     row = cursor.fetchone()
 
     if row:
-        # Update score only if it's higher
         if score > row[0]:
             cursor.execute("UPDATE leaderboard SET score = ? WHERE name = ?", (score, name))
     else:
@@ -78,7 +85,6 @@ def save_leaderboard(name, score):
 
     conn.commit()
     conn.close()
-
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -102,22 +108,18 @@ def game():
         guess = float(request.form.get("guess", 0))
         difference = abs(guess - temp)
         if difference <= 5:
-            # Correct enough
             score += 1
             session['score'] = score
-            # Pick new city
             cities = AMERICAN_CITIES if session.get("difficulty") == "normal" else WORLDWIDE_CITIES
             session['city'] = random.choice(cities)
             return redirect("/game")
         else:
-            # Game over
             session['final_temp'] = temp
             session['final_desc'] = desc
             session['localtime'] = localtime
             return redirect("/gameover")
 
     return render_template("game.html", city=city, state=state, country=country, score=score, localtime=localtime)
-
 
 @app.route("/gameover", methods=["GET", "POST"])
 def gameover():
@@ -135,12 +137,13 @@ def gameover():
                            localtime=session.get("localtime"),
                            leaderboard=load_leaderboard())
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
-
 @app.after_request
 def add_no_cache_headers(response):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+if __name__ == "__main__":
+    init_db()  # Initialize DB on startup
+    app.run(host="0.0.0.0", port=10000)
