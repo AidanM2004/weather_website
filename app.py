@@ -116,7 +116,8 @@ def game():
             session['localtime'] = localtime
             return redirect("/gameover")
 
-    return render_template("game.html", city=city, score=score, localtime=localtime)
+    return render_template("game.html", city=city, state=state, country=country, score=score, localtime=localtime)
+
 
 @app.route("/gameover", methods=["GET", "POST"])
 def gameover():
@@ -136,3 +137,10 @@ def gameover():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
