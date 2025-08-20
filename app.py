@@ -3,10 +3,13 @@ import requests
 import random
 import os
 
+import sqlite3
+
+
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'  # for sessions
 
-API_KEY = '4240cecffcff46c2a96202231251908'
+API_KEY = os.getenv("WEATHER_API_KEY")
 BASE_URL = "http://api.weatherapi.com/v1/current.json?"
 LEADERBOARD_FILE = "leaderboard.txt"
 
@@ -24,6 +27,7 @@ AMERICAN_CITIES = [
 ]
 
 WORLDWIDE_CITIES = [
+    "New York", "Los Angeles", "San Francisco", "Cincinnati", "Las Vegas", "Orlando", "Tampa",
     "London", "Paris", "Tokyo", "Sydney", "Moscow", "Rio de Janeiro", "Cape Town",
     "Toronto", "Dubai", "Beijing", "Mumbai", "Mexico City", "Berlin", "Buenos Aires",
     "Seoul", "Madrid", "Rome", "Bangkok", "Istanbul", "Singapore", "Hong Kong",
@@ -42,24 +46,39 @@ def get_weather(city):
         temp = data['current']['temp_f']
         desc = data['current']['condition']['text']
         time = data['location']['localtime']
-        return temp, desc, time
-    return None, None, None
+        country = data['location']['country']
+        state = data['location'].get('region', '')
+        return temp, desc, time, state, country
+    return None, None, None, None, None
 
-def load_leaderboard():
-    if not os.path.exists(LEADERBOARD_FILE):
-        return {}
-    with open(LEADERBOARD_FILE, 'r') as f:
-        lines = f.readlines()
-    lb = {}
-    for line in lines:
-        name, score = line.strip().split(":")
-        lb[name] = int(score)
-    return lb
+DB_FILE = 'leaderboard.db'
 
-def save_leaderboard(lb):
-    with open(LEADERBOARD_FILE, 'w') as f:
-        for name, score in sorted(lb.items(), key=lambda x: x[1], reverse=True):
-            f.write(f"{name}:{score}\n")
+def load_leaderboard(limit=5):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, score FROM leaderboard ORDER BY score DESC LIMIT ?", (limit,))
+    leaderboard = cursor.fetchall()
+    conn.close()
+    return leaderboard
+
+def save_leaderboard(name, score):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    # Check if user exists
+    cursor.execute("SELECT score FROM leaderboard WHERE name = ?", (name,))
+    row = cursor.fetchone()
+
+    if row:
+        # Update score only if it's higher
+        if score > row[0]:
+            cursor.execute("UPDATE leaderboard SET score = ? WHERE name = ?", (score, name))
+    else:
+        cursor.execute("INSERT INTO leaderboard (name, score) VALUES (?, ?)", (name, score))
+
+    conn.commit()
+    conn.close()
+
 
 @app.route("/", methods=["GET", "POST"])
 def index():
@@ -77,7 +96,7 @@ def index():
 def game():
     city = session.get('city')
     score = session.get('score', 0)
-    temp, desc, localtime = get_weather(city)
+    temp, desc, localtime, state, country = get_weather(city)
 
     if request.method == "POST":
         guess = float(request.form.get("guess", 0))
@@ -104,12 +123,7 @@ def gameover():
     if request.method == "POST":
         name = request.form.get("name", "Anonymous")
         score = session.get('score', 0)
-        lb = load_leaderboard()
-        if name in lb:
-            lb[name] = max(score, lb[name])
-        else:
-            lb[name] = score
-        save_leaderboard(lb)
+        save_leaderboard(name, score)
         return redirect("/")
 
     return render_template("gameover.html",
@@ -118,8 +132,7 @@ def gameover():
                            temp=session.get("final_temp"),
                            desc=session.get("final_desc"),
                            localtime=session.get("localtime"),
-                           leaderboard=sorted(load_leaderboard().items(), key=lambda x: x[1], reverse=True)[:5])
+                           leaderboard=load_leaderboard())
 
 if __name__ == "__main__":
-
     app.run(host="0.0.0.0", port=10000)
